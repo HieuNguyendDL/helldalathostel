@@ -1,0 +1,65 @@
+{
+    "info": {
+        "ten_hostel": "Hello Dalat Hostel",
+        "dia_chi": "33/18/2 Phan Đình Phùng, P.1, Đà Lạt",
+        "so_dien_thoai": "0969975935"
+    },
+    "phong": {
+        "101": {
+            "loai_phong": "Family Room",
+            "gia_goc": 450000
+        },
+        "201": {
+            "loai_phong": "Deluxe Queen Room",
+            "gia_goc": 400000
+        },
+        "102": {
+            "loai_phong": "Single Room",
+            "gia_goc": 180000
+        },
+        "202": {
+            "loai_phong": "Single Room",
+            "gia_goc": 180000
+        },
+        "301": {
+            "loai_phong": "Standard Double Room",
+            "gia_goc": 250000
+        },
+        "302": {
+            "loai_phong": "Standard Double Room",
+            "gia_goc": 250000
+        },
+        "103": {
+            "loai_phong": "Deluxe Double Room",
+            "gia_goc": 300000
+        },
+        "203": {
+            "loai_phong": "Deluxe Double Room",
+            "gia_goc": 300000
+        }
+    },
+    "danh_muc_dich_vu": [
+        {
+            "id": "S1",
+            "ten": "Nước suối",
+            "don_vi": "chai",
+            "gia": 10000
+        },
+        {
+            "id": "S2",
+            "ten": "Giặt ủi",
+            "don_vi": "kg",
+            "gia": 30000
+        }
+    ],
+    "bookings": [],
+    "invoices": [],
+    "financial_transactions": [],
+    "counters": {
+        "booking_le": 0,
+        "booking_doan": 0,
+        "dich_vu": 2,
+        "invoice": 0,
+        "transaction": 0
+    }
+}
