@@ -273,5 +273,5 @@ def get_invoice_pdf(booking_id):
 
 if __name__ == '__main__':
     print("Khởi động máy chủ Hello Dalat Hostel...")
-    print("API đang chạy tại: http://127.0.0.1:5000")
+    print("API đang chạy tại: https://hellodalat.onrender.com")
     app.run(debug=True, port=5000)
