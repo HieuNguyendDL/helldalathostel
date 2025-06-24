@@ -12,6 +12,7 @@
         .sidebar-link:not(.active):hover { background-color: #eef2ff; }
         .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 40; }
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; max-height: 90vh; overflow-y: auto; }
+        .tab-button.active { border-color: #4f46e5; color: #4f46e5; }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -47,15 +48,11 @@
     <div id="detail-modal" class="modal bg-white rounded-lg shadow-xl w-11/12 md:w-3/4 lg:w-2/3"></div>
 
     <script>
-        // SỬA LỖI: Cung cấp URL đầy đủ để khắc phục lỗi "Failed to parse URL"
-        // Điều này yêu cầu backend phải đang chạy ở địa chỉ http://127.0.0.1:5000
-        const API_BASE_URL = 'https://hellodalat.onrender.com'; 
+        const API_BASE_URL = 'https://hellodalat.onrender.com';
         let AppState = { bookings: [], rooms: {}, services: [], info: {}, financial_transactions: [] };
 
-        // --- CORE FUNCTIONS ---
         async function fetchAPI(endpoint, options = {}) {
             try {
-                // Thêm tiền tố '/api' vào tất cả các yêu cầu
                 const url = `${API_BASE_URL}/api${endpoint}`;
                 const response = await fetch(url, options);
                 if (!response.ok) {
@@ -67,46 +64,47 @@
                 return textData ? JSON.parse(textData) : {};
             } catch (error) {
                 console.error(`Lỗi API tại endpoint '${endpoint}':`, error);
-                alert(`Lỗi kết nối máy chủ:\nEndpoint: ${endpoint}\nLỗi: ${error.message}\n\nVui lòng đảm bảo backend của bạn đang hoạt động và không có lỗi.`);
+                alert(`Lỗi kết nối máy chủ:\nEndpoint: ${endpoint}\nLỗi: ${error.message}`);
                 return null;
             }
         }
         
-        function openModal(modalId, content) {
+        const openModal = (modalId, content) => {
             const modal = document.getElementById(modalId);
             modal.innerHTML = content;
             modal.style.display = 'block';
             document.getElementById('modal-backdrop').style.display = 'block';
-        }
+        };
 
-        function closeModal(modalId) {
+        const closeModal = (modalId) => {
             const modal = document.getElementById(modalId);
             modal.style.display = 'none';
             document.getElementById('modal-backdrop').style.display = 'none';
-        }
+        };
 
-        function closeAllModals() {
+        const closeAllModals = () => {
             document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
             document.getElementById('modal-backdrop').style.display = 'none';
-        }
+        };
 
-        // --- RENDER FUNCTIONS ---
-        function renderView(viewId) {
+        const renderView = (viewId) => {
             const mainContent = document.getElementById('main-content');
-            mainContent.innerHTML = '<div>Đang tải...</div>'; // Loading indicator
+            mainContent.innerHTML = '<div>Đang tải...</div>';
+            let content = '';
             switch(viewId) {
-                case 'dashboard': mainContent.innerHTML = renderDashboard(); break;
-                case 'bookings': mainContent.innerHTML = renderBookingsTable(); break;
-                case 'calendar': mainContent.innerHTML = renderCalendar(); break;
-                case 'finance': mainContent.innerHTML = `<p>Chức năng tài chính đang được xây dựng.</p>`; break;
-                default: mainContent.innerHTML = renderDashboard();
+                case 'dashboard': content = renderDashboard(); break;
+                case 'bookings': content = renderBookingsTable(); break;
+                case 'calendar': content = renderCalendar(); break;
+                case 'finance': content = renderFinance(); break;
+                default: content = renderDashboard();
             }
-        }
+            mainContent.innerHTML = content;
+        };
 
-        function renderBookingsTable() {
+        const renderBookingsTable = (filteredData = null) => {
             let tableHtml = `<div class="bg-white p-6 rounded-lg shadow-md"><input type="text" id="booking-search" placeholder="Tìm kiếm theo tên, mã booking..." class="w-full px-4 py-2 border rounded-lg mb-4"><div class="overflow-x-auto"><table class="w-full text-left"><thead><tr class="bg-gray-100"><th class="p-3">Mã</th><th class="p-3">Khách</th><th class="p-3">Check-in</th><th class="p-3">Check-out</th><th class="p-3">Trạng thái</th><th class="p-3"></th></tr></thead><tbody id="bookings-table-body">`;
-            
-            AppState.bookings.forEach(b => {
+            const dataToRender = (filteredData || AppState.bookings).sort((a,b) => b.booking_id.localeCompare(a.booking_id, undefined, {numeric: true}));
+            dataToRender.forEach(b => {
                 let statusClass = {'da_nhan_phong': 'bg-blue-100 text-blue-800', 'da_dat': 'bg-yellow-100 text-yellow-800', 'da_tra_phong': 'bg-green-100 text-green-800', 'da_huy': 'bg-gray-100 text-gray-800'}[b.trang_thai] || '';
                 tableHtml += `<tr>
                     <td class="p-3 font-semibold">${b.booking_id}</td><td>${b.ten_khach || b.ten_truong_doan}</td>
@@ -114,51 +112,15 @@
                     <td><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusClass}">${b.trang_thai.replace(/_/g, ' ')}</span></td>
                     <td><button data-action="open-booking-detail" data-id="${b.booking_id}" class="text-indigo-600 text-sm font-semibold">Chi tiết</button></td></tr>`;
             });
-
             tableHtml += `</tbody></table></div></div>`;
             return tableHtml;
-        }
-
-        function renderDashboard() { return `<p>Trang Dashboard đang được xây dựng.</p>`; }
-        function renderCalendar() { return `<p>Trang Lịch đang được xây dựng.</p>`; }
-
-        // --- EVENT HANDLING (using Delegation) ---
-        document.body.addEventListener('click', function(e) {
-            const action = e.target.dataset.action;
-            if (!action) return;
-
-            const target = e.target;
-            
-            if (action === 'navigate') {
-                e.preventDefault();
-                document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
-                target.closest('a').classList.add('active');
-                const viewId = target.closest('a').dataset.view;
-                document.getElementById('view-title').textContent = target.closest('a').querySelector('span').textContent;
-                renderView(viewId);
-            }
-            
-            if (action === 'open-add-booking-modal') openAddBookingModal();
-            if (action === 'open-booking-detail') openBookingDetailModal(target.dataset.id);
-            if (action === 'close-modal') closeModal(target.closest('.modal').id);
-
-            if (action === 'delete-booking') confirmDeleteBooking(target.dataset.id);
-            if (action === 'download-invoice') downloadInvoice(target.dataset.id);
-            if (action === 'check-available-rooms') checkAvailableRooms();
-            if (action === 'select-room') selectRoom(target.dataset.id, target.dataset.price);
-            if (action === 'remove-room') target.closest('.selected-room-item').remove();
-        });
-
-        document.body.addEventListener('submit', function(e) {
-            const action = e.target.dataset.action;
-            if (!action) return;
-            e.preventDefault();
-            if (action === 'save-booking') handleBookingFormSubmit(e);
-        });
-
-        // --- MODAL & FORM LOGIC ---
+        };
         
-        function openAddBookingModal() {
+        const renderDashboard = () => `<p>Trang Dashboard đang được xây dựng.</p>`;
+        const renderCalendar = () => `<p>Trang Lịch đang được xây dựng.</p>`;
+        const renderFinance = () => `<p>Trang Tài chính đang được xây dựng.</p>`;
+
+        const openAddBookingModal = () => {
             const content = `
                 <div class="p-6 border-b flex justify-between items-center"><h3 class="text-xl font-semibold">Thêm Booking mới</h3><button data-action="close-modal" data-modal-id="main-modal">&times;</button></div>
                 <form data-action="save-booking">
@@ -178,9 +140,9 @@
                 </form>
             `;
             openModal('main-modal', content);
-        }
-
-        async function checkAvailableRooms() {
+        };
+        
+        const checkAvailableRooms = async () => {
             const checkin = document.getElementById('checkin-date').value;
             const checkout = document.getElementById('checkout-date').value;
             if (!checkin || !checkout) { alert('Vui lòng chọn ngày.'); return; }
@@ -195,14 +157,14 @@
                 });
             }
             document.getElementById('available-rooms-container').classList.remove('hidden');
-        }
+        };
 
-        function selectRoom(roomId, price) {
+        const selectRoom = (roomId, price) => {
             if (document.getElementById(`selected-${roomId}`)) return;
             document.getElementById('selected-rooms-list').innerHTML += `<div id="selected-${roomId}" class="selected-room-item flex justify-between items-center p-2 bg-gray-100 rounded"><span>Phòng ${roomId}</span><input type="number" value="${price}" class="w-32 text-right p-1 border rounded"><button type="button" data-action="remove-room" class="px-2 font-bold text-red-500">&times;</button></div>`;
-        }
+        };
         
-        async function handleBookingFormSubmit(event) {
+        const handleBookingFormSubmit = async (event) => {
             const form = event.target;
             const bookingData = {
                 guest_type: form.querySelector('#guest-type').value,
@@ -221,9 +183,9 @@
                 closeAllModals();
                 initializeApp();
             }
-        }
+        };
         
-        async function openBookingDetailModal(bookingId) {
+        const openBookingDetailModal = (bookingId) => {
             const booking = AppState.bookings.find(b => b.booking_id === bookingId);
             if (!booking) { alert('Không tìm thấy booking!'); return; }
             const nights = (new Date(booking.check_out_date) - new Date(booking.check_in_date)) / 86400000 || 1;
@@ -253,9 +215,9 @@
                     <button data-action="download-invoice" data-id="${bookingId}" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">In hóa đơn</button>
                 </div>`;
             openModal('detail-modal', content);
-        }
+        };
 
-        async function confirmDeleteBooking(bookingId) {
+        const confirmDeleteBooking = async (bookingId) => {
             if (confirm(`Bạn có chắc chắn muốn xóa booking ${bookingId}?`)) {
                 const result = await fetchAPI(`/bookings/${bookingId}`, { method: 'DELETE' });
                 if (result) {
@@ -264,9 +226,9 @@
                     initializeApp();
                 }
             }
-        }
+        };
         
-        async function downloadInvoice(bookingId) {
+        const downloadInvoice = async (bookingId) => {
             const blob = await fetchAPI(`/bookings/${bookingId}/invoice-pdf`, { responseType: 'blob' });
             if (blob) {
                 const url = window.URL.createObjectURL(blob);
@@ -274,10 +236,10 @@
                 a.style.display = 'none'; a.href = url; a.download = `Invoice_${bookingId}.pdf`;
                 document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
             }
-        }
+        };
 
         // --- INITIALIZATION ---
-        async function initializeApp() {
+        const initializeApp = async () => {
             console.log("Đang khởi tạo ứng dụng và tải dữ liệu...");
             const data = await fetchAPI('/data');
             if (data) { 
@@ -286,7 +248,7 @@
             } else {
                 document.getElementById('main-content').innerHTML = `<p class="text-red-500">Lỗi nghiêm trọng: Không thể tải dữ liệu từ server.</p>`;
             }
-        }
+        };
         document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
 </body>
