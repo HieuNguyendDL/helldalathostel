@@ -7,6 +7,11 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+# --- RENDER DEPLOYMENT SETUP ---
+data_dir = os.environ.get('RENDER_DATA_DIR', '.')
+DATA_FILENAME = os.path.join(data_dir, "hello_dalat_data_full.json")
+
+# --- LIBRARY CHECK ---
 try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import inch
@@ -17,11 +22,12 @@ try:
 except ImportError:
     REPORTLAB_INSTALLED = False
 
-DATA_FILENAME = "hello_dalat_data_full.json"
+# --- CONSTANTS ---
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 FONT_FILE = "DejaVuSans.ttf"
 
+# --- CORE SYSTEM CLASS ---
 class HostelBookingSystem:
     def __init__(self, filename):
         self.filename = filename
@@ -35,14 +41,24 @@ class HostelBookingSystem:
             pdfmetrics.registerFontFamily('DejaVu', normal='DejaVu', bold='DejaVu', italic='DejaVu', boldItalic='DejaVu')
 
     def _load_data(self):
-        if os.path.exists(self.filename):
-            with open(self.filename, 'r', encoding='utf-8') as f: self.data = json.load(f)
-        else: self.data = self._get_default_structure()
+        try:
+            if os.path.exists(self.filename):
+                with open(self.filename, 'r', encoding='utf-8') as f:
+                    self.data = json.load(f)
+            else:
+                self.data = self._get_default_structure()
+                self._save_data()
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Error loading data file, using default structure. Error: {e}")
+            self.data = self._get_default_structure()
         self._ensure_data_integrity()
-        self._save_data()
 
     def _save_data(self):
-        with open(self.filename, 'w', encoding='utf-8') as f: json.dump(self.data, f, ensure_ascii=False, indent=4)
+        try:
+            with open(self.filename, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=4)
+        except IOError as e:
+            print(f"CRITICAL: Could not save data to {self.filename}. Error: {e}")
 
     def _get_default_structure(self):
         return {"info": { "ten_hostel": "Hello Dalat Hostel", "dia_chi": "33/18/2 Phan Đình Phùng, P.1, Đà Lạt", "so_dien_thoai": "0969975935" }, "phong": { "101": {"loai_phong": "Family Room", "gia_goc": 450000}, "201": {"loai_phong": "Deluxe Queen Room", "gia_goc": 400000}, "102": {"loai_phong": "Single Room", "gia_goc": 180000}, "202": {"loai_phong": "Single Room", "gia_goc": 180000}, "301": {"loai_phong": "Standard Double Room", "gia_goc": 250000}, "302": {"loai_phong": "Standard Double Room", "gia_goc": 250000}, "103": {"loai_phong": "Deluxe Double Room", "gia_goc": 300000}, "203": {"loai_phong": "Deluxe Double Room", "gia_goc": 300000} }, "danh_muc_dich_vu": [ {"id": "S1", "ten": "Nước suối", "don_vi": "chai", "gia": 10000}, {"id": "S2", "ten": "Giặt ủi", "don_vi": "kg", "gia": 30000} ], "bookings": [], "invoices": [], "financial_transactions": [], "counters": { "booking_le": 0, "booking_doan": 0, "dich_vu": 2, "invoice": 0, "transaction": 0 } }
@@ -52,12 +68,12 @@ class HostelBookingSystem:
             self.data.setdefault(key, default_value)
         for key, default_value in [('booking_le', 0), ('booking_doan', 0), ('dich_vu', 0), ('invoice', 0), ('transaction', 0)]:
             self.data['counters'].setdefault(key, default_value)
-        for booking in self.data['bookings']:
+        for booking in self.data.get('bookings', []):
             booking.setdefault('thanh_toan', [])
             booking.setdefault('dich_vu_da_dung', [])
     
     def _generate_id(self, counter_key, prefix):
-        self.data['counters'][counter_key] += 1
+        self.data['counters'][counter_key] = self.data['counters'].get(counter_key, 0) + 1
         return f"{prefix}{self.data['counters'][counter_key]}"
 
     def _calculate_room_cost(self, booking):
@@ -104,6 +120,15 @@ class HostelBookingSystem:
         self.data['bookings'].append(new_booking)
         self._save_data()
         return new_booking
+
+    def update_booking_info(self, booking_id, update_data):
+        booking, index = self.find_booking_by_id(booking_id)
+        if booking:
+            booking.update(update_data)
+            self.data['bookings'][index] = booking
+            self._save_data()
+            return booking
+        return None
         
     def delete_booking(self, booking_id):
         _, index = self.find_booking_by_id(booking_id)
@@ -246,6 +271,10 @@ CORS(app)
 system = HostelBookingSystem(DATA_FILENAME)
 
 # --- API ENDPOINTS ---
+@app.route('/')
+def health_check():
+    return jsonify({"status": "ok", "message": "Hello Dalat Hostel API is running!"})
+
 @app.route('/api/data', methods=['GET'])
 def get_all_data():
     system._load_data()
@@ -262,6 +291,13 @@ def add_booking():
 def get_booking(booking_id):
     booking, _ = system.find_booking_by_id(booking_id)
     if booking: return jsonify(booking)
+    return jsonify({"error": "Booking not found"}), 404
+
+@app.route('/api/bookings/<string:booking_id>', methods=['PUT'])
+def update_booking_endpoint(booking_id):
+    data = request.json
+    updated = system.update_booking_info(booking_id, data)
+    if updated: return jsonify(updated)
     return jsonify({"error": "Booking not found"}), 404
 
 @app.route('/api/bookings/<string:booking_id>', methods=['DELETE'])
@@ -311,6 +347,6 @@ def add_service_endpoint(booking_id):
     return jsonify({"error": "Booking or Service not found"}), 404
 
 if __name__ == '__main__':
-    print("Khởi động máy chủ Hello Dalat Hostel...")
-    print("API đang chạy tại: http://127.0.0.1:5000")
-    app.run(debug=True, port=5000)
+    print(f"Starting server...")
+    print(f"Data file location: {os.path.abspath(DATA_FILENAME)}")
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
