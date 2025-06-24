@@ -2,16 +2,11 @@
 import json
 import os
 import io
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-# --- RENDER DEPLOYMENT SETUP ---
-data_dir = os.environ.get('RENDER_DATA_DIR', '.')
-DATA_FILENAME = os.path.join(data_dir, "hello_dalat_data_full.json")
-
-# --- LIBRARY CHECK ---
 try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import inch
@@ -21,6 +16,10 @@ try:
     REPORTLAB_INSTALLED = True
 except ImportError:
     REPORTLAB_INSTALLED = False
+
+# --- RENDER DEPLOYMENT SETUP ---
+data_dir = os.environ.get('RENDER_DATA_DIR', '.')
+DATA_FILENAME = os.path.join(data_dir, "hello_dalat_data_full.json")
 
 # --- CONSTANTS ---
 DATE_FORMAT = "%Y-%m-%d"
@@ -198,7 +197,8 @@ class HostelBookingSystem:
         invoice, _ = next(((inv, i) for i, inv in enumerate(self.data['invoices']) if inv.get('booking_id') == booking_id), (None, None))
         if not invoice: invoice = self.create_invoice(booking)
         
-        c.setFont('DejaVu', 18); c.drawCentredString(4.25 * inch, 9.5 * inch, "HÓA ĐƠN THANH TOÁN")
+        c
+        .setFont('DejaVu', 18); c.drawCentredString(4.25 * inch, 9.5 * inch, "HÓA ĐƠN THANH TOÁN")
         c.setFont('DejaVu', 10); c.drawString(5.5 * inch, 9.25 * inch, f"Số HĐ: {invoice['invoice_id']}")
         c.drawString(5.5 * inch, 9.1 * inch, f"Ngày xuất: {invoice['ngay_xuat']}")
         
@@ -272,8 +272,8 @@ system = HostelBookingSystem(DATA_FILENAME)
 
 # --- API ENDPOINTS ---
 @app.route('/')
-def health_check():
-    return jsonify({"status": "ok", "message": "Hello Dalat Hostel API is running!"})
+def serve_index():
+    return send_from_directory('.', 'index.html')
 
 @app.route('/api/data', methods=['GET'])
 def get_all_data():
@@ -346,7 +346,10 @@ def add_service_endpoint(booking_id):
         return jsonify(updated_booking), 200
     return jsonify({"error": "Booking or Service not found"}), 404
 
+# --- MAIN EXECUTION ---
 if __name__ == '__main__':
     print(f"Starting server...")
     print(f"Data file location: {os.path.abspath(DATA_FILENAME)}")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+    print(f"Access the application at: http://127.0.0.1:5000")
+    # For production, use Gunicorn. For local dev, Flask's server is fine.
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
