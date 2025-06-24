@@ -32,6 +32,7 @@ class HostelBookingSystem:
     def _register_font(self):
         if REPORTLAB_INSTALLED and os.path.exists(FONT_FILE):
             pdfmetrics.registerFont(TTFont('DejaVu', FONT_FILE))
+            pdfmetrics.registerFontFamily('DejaVu', normal='DejaVu', bold='DejaVu', italic='DejaVu', boldItalic='DejaVu')
 
     def _load_data(self):
         if os.path.exists(self.filename):
@@ -140,7 +141,6 @@ class HostelBookingSystem:
         total_bill = total_room_cost + total_service_cost
         total_paid = sum(p['so_tien'] for p in booking.get('thanh_toan', []))
         
-        # Xóa hóa đơn cũ nếu có
         self.data['invoices'] = [inv for inv in self.data.get('invoices', []) if inv.get('booking_id') != booking.get('booking_id')]
         
         invoice_id = self._generate_id('invoice', "HD-")
@@ -151,11 +151,8 @@ class HostelBookingSystem:
         }
         self.data['invoices'].append(invoice_data)
         
-        # Ghi nhận doanh thu
-        self._log_transaction(
-            'thu', total_bill, 'tong_hop', f"Doanh thu từ Booking {booking['booking_id']}",
-            {"source": "Doanh thu phòng/dịch vụ", "related_invoice_id": invoice_id}
-        )
+        self._log_transaction('thu', total_bill, 'tong_hop', f"Doanh thu từ Booking {booking['booking_id']}",
+            {"source": "Doanh thu phòng/dịch vụ", "related_invoice_id": invoice_id})
         self._save_data()
         return invoice_data
         
@@ -180,7 +177,7 @@ class HostelBookingSystem:
         c.setFont('DejaVu', 10); c.drawString(5.5 * inch, 9.25 * inch, f"Số HĐ: {invoice['invoice_id']}")
         c.drawString(5.5 * inch, 9.1 * inch, f"Ngày xuất: {invoice['ngay_xuat']}")
         
-        nights, total_room_cost = self._calculate_room_cost(booking)
+        nights, _ = self._calculate_room_cost(booking)
         y = 8.7 * inch
         c.drawString(inch, y, "Khách hàng:"); c.drawString(2 * inch, y, invoice.get('ten_khach_hang', ''))
         y -= 0.25 * inch
@@ -192,7 +189,8 @@ class HostelBookingSystem:
         c.drawString(inch, y, "CHI TIẾT THANH TOÁN"); y -= 0.25 * inch; c.line(inch, y, 7.5 * inch, y); y -= 0.2 * inch
         
         c.setFont('DejaVu', 10); c.drawString(1.1 * inch, y, "Mô tả"); c.drawRightString(5.5 * inch, y, "Đơn giá");
-        c.drawRightString(6.5 * inch, y, "Số lượng"); c.drawRightString(7.4 * inch, y, "Thành tiền"); y -= 0.1 * inch
+        c.drawRightString(6.5 * inch, y, "Số lượng"); c.drawRightString(7.4 * inch, y, "Thành tiền")
+        y -= 0.1 * inch
         
         for p in booking['phong_dat']:
             y -= 0.25 * inch; c.drawString(1.1 * inch, y, f"Tiền phòng {p.get('so_phong')} ({p.get('loai_phong')})")
@@ -216,6 +214,31 @@ class HostelBookingSystem:
         c.save()
         buffer.seek(0)
         return buffer
+        
+    def add_payment_to_booking(self, booking_id, payment_data):
+        booking, _ = self.find_booking_by_id(booking_id)
+        if booking:
+            booking['thanh_toan'].append({
+                "so_tien": payment_data.get('amount'),
+                "phuong_thuc": payment_data.get('method'),
+                "ngay_thanh_toan": datetime.now().strftime(DATETIME_FORMAT),
+                "ghi_chu": payment_data.get('note')
+            })
+            self._save_data()
+            return booking
+        return None
+
+    def add_service_to_booking(self, booking_id, service_data):
+        booking, _ = self.find_booking_by_id(booking_id)
+        master_service = next((s for s in self.data['danh_muc_dich_vu'] if s['id'] == service_data.get('service_id')), None)
+        if booking and master_service:
+            booking['dich_vu_da_dung'].append({
+                **master_service,
+                "so_luong": service_data.get('quantity')
+            })
+            self._save_data()
+            return booking
+        return None
 
 # --- KHỞI TẠO FLASK APP & SYSTEM ---
 app = Flask(__name__)
@@ -244,13 +267,13 @@ def get_booking(booking_id):
 @app.route('/api/bookings/<string:booking_id>', methods=['DELETE'])
 def delete_booking_endpoint(booking_id):
     if system.delete_booking(booking_id):
-        return jsonify({"message": "Booking deleted"}), 200
+        return jsonify({"message": "Booking deleted successfully"}), 200
     return jsonify({"error": "Booking not found"}), 404
 
 @app.route('/api/bookings/<string:booking_id>/status', methods=['PUT'])
 def change_status_endpoint(booking_id):
     new_status = request.json.get('status')
-    if not new_status: return jsonify({"error": "Missing status"}), 400
+    if not new_status: return jsonify({"error": "New status not provided"}), 400
     updated = system.change_booking_status(booking_id, new_status)
     if updated: return jsonify(updated)
     return jsonify({"error": "Booking not found"}), 404
@@ -271,7 +294,23 @@ def get_invoice_pdf(booking_id):
         return send_file(pdf_buffer, as_attachment=True, download_name=f'Invoice_{booking_id}.pdf', mimetype='application/pdf')
     return jsonify({"error": "Could not generate PDF"}), 500
 
+@app.route('/api/bookings/<string:booking_id>/payments', methods=['POST'])
+def add_payment_endpoint(booking_id):
+    data = request.json
+    updated_booking = system.add_payment_to_booking(booking_id, data)
+    if updated_booking:
+        return jsonify(updated_booking), 200
+    return jsonify({"error": "Booking not found"}), 404
+
+@app.route('/api/bookings/<string:booking_id>/services', methods=['POST'])
+def add_service_endpoint(booking_id):
+    data = request.json
+    updated_booking = system.add_service_to_booking(booking_id, data)
+    if updated_booking:
+        return jsonify(updated_booking), 200
+    return jsonify({"error": "Booking or Service not found"}), 404
+
 if __name__ == '__main__':
     print("Khởi động máy chủ Hello Dalat Hostel...")
-    print("API đang chạy tại: https://hellodalat.onrender.com")
+    print("API đang chạy tại: http://127.0.0.1:5000")
     app.run(debug=True, port=5000)
